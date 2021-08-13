@@ -8,7 +8,7 @@ import re
 import numpy as np
 import math
 """
-conll和txt合併成類似squad的格式
+tsv, csv合併成類似squad的格式
 """
 
 squad = {"data": [], "version": "v2.0"}
