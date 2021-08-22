@@ -8,6 +8,8 @@ import re
 import numpy as np
 import math
 import spacy
+from strsimpy.levenshtein import Levenshtein
+levenshtein = Levenshtein()
 '''
 use spacy to create jsonl-like file
 '''
@@ -27,14 +29,14 @@ input_file_dir = "../original_data/"
 
 train_file_0 = "BioCreative_TrainTask3.0.tsv"
 train_file_1 = "BioCreative_TrainTask3.1.tsv"
-SMM4H18_file = "SMM4H18_Train.csv"
+SMM4H18_file = "SMM4H18_Train_zy_debug.csv"
 
 val_file = "BioCreative_ValTask3.tsv"
 
 # train_files = [train_file_0, train_file_1]
 train_files = [SMM4H18_file]
 val_files = [val_file]
-out_fname = "train_data_SMM_v1.jsonl"   ##########
+out_fname = "train_data_SMM_v2_dump_no_answer.jsonl"   ##########
 question = "extract the spans that mention a medication or dietary supplement in tweets."
 qid_count = 0
 
@@ -50,9 +52,9 @@ def process_text(s):
     # replace &amp; &lt; ...
     new_s = html.unescape(s)
     # replace username @abc123
-    new_s_2 = re.sub(username_re, "[name]", new_s)
+    # new_s_2 = re.sub(username_re, "[name]", new_s)#####################
     # replace url
-    new_s_3 = re.sub(url_re, "[url]", new_s_2)
+    new_s_3 = re.sub(url_re, "[url]", new_s)
 
     return new_s_3
 
@@ -105,12 +107,13 @@ for r, d, f in os.walk(input_file_dir):
                         start_idx = processed_str.lower().find(ans.lower())
                         real_ans = processed_str[start_idx:start_idx + len(ans)]  # because SMM dataset sometimes lowercase,
                         # print(repr(ans), repr(real_ans))
-                        if real_ans == '' and ans != 'rand0m 5tr1ng':
-                            print(repr(ans), index)
-                        answer_text_list.append(real_ans)
+                        if real_ans == '' and ans != 'rand0m 5tr1ng':  # real_ans找不到
+                            print(index + 2, repr(ans))
+                            continue   # will not output this term
+                        answer_text_list.append(real_ans)  # 用real_ans(無法從文本找到)??
                         start_idx_list.append(start_idx)
+                        # print(repr(ans), start_idx)
                 # print(answer_text, start_idx)
-
                 for idx_, answer_text_ in enumerate(answer_text_list):
                     answer_text = answer_text_
                     start_idx = start_idx_list[idx_]
@@ -118,6 +121,8 @@ for r, d, f in os.walk(input_file_dir):
                     title = str(row['user_id'])  ###############################
                     qas = []
                     if start_idx != -1:
+                        # print(answer_text.__repr__())
+                        # exit(132)
                         detected_answers = [
                             {"text": answer_text,
                              "char_spans": [],
@@ -129,19 +134,25 @@ for r, d, f in os.walk(input_file_dir):
 
                         # print(type(answer_tokens))
                         answer_token_len = len(answer_tokens)  # token數量 通常為單字數量
-
+                        most_sim_span = None
+                        most_near_levenshtein = 9999
                         for token_idx in range(len(sent_tokens)):  # 找到token位於原本spacy.doc的哪幾個
                             span = sent_tokens[token_idx:token_idx + answer_token_len]  # 根據spacy斷句的answer token決定span長度
-                            # print("checking span:", span.text, token_idx)
-
+                            #####print("checking span:", repr(span.text), token_idx, repr(answer_tokens.text))
+                            L_dist = levenshtein.distance(span.text, answer_tokens.text)
+                            if L_dist < most_near_levenshtein:
+                                most_near_levenshtein = L_dist
+                                most_sim_span = span
                             if span.text == answer_tokens.text:  # 有在doc的index，需額外找到token字元的index
-                                # print(span.text, token_idx)
-
-                                answer_start_idx = span.doc[span.start].idx
-                                # print(answer_start_idx)  # token於doc index位置
-                                detected_answers[0]["char_spans"].append([answer_start_idx, answer_start_idx + len(answer_text) - 1])
-                                detected_answers[0]["token_spans"].append([span.start, span.start + answer_token_len - 1])
+                                # print("get span:", span.text, token_idx)
                                 break
+                        if most_near_levenshtein > 2:
+                            print(index + 2, repr(most_sim_span.text), repr(answer_tokens.text), most_near_levenshtein)
+                            continue  ### doesn't output qas
+                        answer_start_idx = most_sim_span.doc[most_sim_span.start].idx
+                        # print(answer_start_idx)  # token於doc index位置
+                        detected_answers[0]["char_spans"].append([answer_start_idx, answer_start_idx + len(answer_text) - 1])
+                        detected_answers[0]["token_spans"].append([most_sim_span.start, most_sim_span.start + answer_token_len - 1])
 
                         # print(detected_answers)
                         qas.append(
