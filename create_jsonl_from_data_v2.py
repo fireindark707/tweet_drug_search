@@ -52,7 +52,7 @@ def process_text(s):
     # replace &amp; &lt; ...
     new_s = html.unescape(s)
     # replace username @abc123
-    # new_s_2 = re.sub(username_re, "[name]", new_s)#####################
+    # new_s_2 = re.sub(username_re, "[name]", new_s)##################### <-
     # replace url
     new_s_3 = re.sub(url_re, "[url]", new_s)
 
